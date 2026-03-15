@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>鉄骨数量集計システム</title>
+    <style>
+        :root { --primary: #2c3e50; --secondary: #34495e; --accent: #e67e22; --success: #27ae60; --info: #2980b9; --purple: #8e44ad; }
+        body { font-family: "Helvetica Neue", Arial, sans-serif; background: #f4f7f9; margin: 15px; font-size: 11px; color: #333; }
+        .container { max-width: 1600px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { font-size: 1.4em; border-left: 5px solid var(--accent); padding-left: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        .toolbar { margin-bottom: 20px; display: flex; gap: 8px; background: #f0f2f5; padding: 12px; border-radius: 6px; align-items: center; border: 1px solid #ddd; }
+        .group-container { border: 1px solid #ccc; border-radius: 6px; margin-bottom: 25px; background: #fff; overflow-x: auto; }
+        .group-header { background: #e9ecef; padding: 8px 12px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #ccc; }
+        table { width: 100%; border-collapse: collapse; min-width: 1400px; table-layout: fixed; }
+        th { background: var(--secondary); color: white; padding: 6px 2px; font-weight: normal; cursor: pointer; border: 1px solid #455a64; text-align: center; }
+        td { border: 1px solid #ddd; padding: 2px; }
+        
+        .col-usage { width: 150px; }
+        .col-cat   { width: 110px; }
+        .col-size  { width: 230px; }
+        .col-spec  { width: 65px; }
+        .col-num   { width: 60px; }
+        .col-result{ width: 85px; }
+        .col-op    { width: 110px; }
+
+        select, input { width: 100%; padding: 4px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 3px; font-size: 11px; height: 26px; }
+        .num { text-align: right; }
+        .total-panel { background: var(--primary); color: white; padding: 15px 25px; border-radius: 6px; text-align: right; margin-top: 10px; }
+        .btn { border: none; border-radius: 4px; cursor: pointer; color: white; padding: 6px 12px; font-weight: bold; font-size: 11px; }
+        .btn-copy { background: #f39c12; }
+        .btn-move { background: #7f8c8d; }
+        .btn-del { background: #e74c3c; }
+        .hidden-file { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>鉄骨数量集計システム
+        <div>
+            <button class="btn" style="background:var(--purple)" onclick="exportProject()">プロジェクト保存</button>
+            <label class="btn" style="background:var(--accent); display:inline-block;">読込<input type="file" class="hidden-file" onchange="importProject(this)"></label>
+            <button class="btn" style="background:var(--info)" onclick="exportCSV()">CSV出力</button>
+        </div>
+    </h1>
+    
+    <div class="toolbar">
+        <strong>操作メニュー:</strong>
+        <button class="btn" style="background:var(--success)" onclick="addGroup()">+ 新規グループ追加</button>
+        <span style="color:#666; margin-left:10px;">JIS規格（重量・軽量・FB・PL）の全バリエーションを網羅した統合データベースです。</span>
+    </div>
+
+    <div id="groupsArea"></div>
+
+    <div class="total-panel">
+        <div>総合計重量: <span id="grandWeight" style="font-size: 1.8em; color: #f1c40f;">0.00</span> kg / <span id="grandTon">0.000</span> t</div>
+        <div>総合計表面積: <span id="grandArea" style="font-size: 1.4em; color: #3498db;">0.00</span> ㎡</div>
+    </div>
+</div>
+
+<script>
+const steelDB = {
+    "重量鋼材（H・管）": {
+        "H形鋼": {
+            "広幅": [
+                {n:"H-100x100x6x8", u:16.9, a:0.584}, {n:"H-125x125x6.5x9", u:23.6, a:0.731}, {n:"H-150x150x7x10", u:31.1, a:0.878},
+                {n:"H-175x175x7.5x11", u:40.2, a:1.02}, {n:"H-200x200x8x12", u:49.9, a:1.17}, {n:"H-250x250x9x14", u:71.8, a:1.46},
+                {n:"H-300x300x10x15", u:93, a:1.76}, {n:"H-350x350x12x19", u:135, a:2.05}, {n:"H-400x400x13x21", u:172, a:2.35}, {n:"H-428x407x20x35", u:283, a:2.45}
+            ],
+            "中幅": [
+                {n:"H-148x100x6x9", u:21.1, a:0.672}, {n:"H-194x150x6x9", u:30.6, a:0.962}, {n:"H-244x175x7x11", u:43.6, a:1.20},
+                {n:"H-294x200x8x12", u:55.8, a:1.35}, {n:"H-344x250x9x14", u:78.3, a:1.64}, {n:"H-394x300x11x16", u:104, a:1.94},
+                {n:"H-440x300x11x18", u:121, a:2.04}, {n:"H-582x300x12x17", u:133, a:2.32}, {n:"H-700x300x13x24", u:182, a:2.55}, {n:"H-800x300x14x26", u:207, a:2.75}, {n:"H-900x300x16x28", u:240, a:2.94}
+            ],
+            "細幅": [
+                {n:"H-100x50x5x7", u:9.12, a:0.381}, {n:"H-125x60x6x8", u:12.9, a:0.473}, {n:"H-150x75x5x7", u:14, a:0.573},
+                {n:"H-175x90x5x8", u:17.7, a:0.673}, {n:"H-200x100x5.5x8", u:20.9, a:0.773}, {n:"H-250x125x6x9", u:29, a:0.972},
+                {n:"H-300x150x6.5x9", u:36, a:1.17}, {n:"H-350x175x7x11", u:49, a:1.37}, {n:"H-400x200x8x13", u:66, a:1.56}, {n:"H-500x200x10x16", u:88.2, a:1.76}, {n:"H-600x200x11x17", u:103, a:1.96}
+            ]
+        },
+        "鋼管/コラム": {
+            "角形コラム(BCR/BCP)": [
+                {n:"□-200x200x6.0", u:35.8, a:0.785}, {n:"□-200x200x9.0", u:51.9, a:0.775}, {n:"□-250x250x9.0", u:66.1, a:0.975},
+                {n:"□-250x250x12", u:85.5, a:0.965}, {n:"□-300x300x12", u:104, a:1.16}, {n:"□-350x350x12", u:123, a:1.36},
+                {n:"□-350x350x16", u:160, a:1.35}, {n:"□-400x400x12", u:142, a:1.56}, {n:"□-400x400x16", u:185, a:1.55},
+                {n:"□-500x500x16", u:236, a:1.94}, {n:"□-600x600x25", u:445, a:2.32}
+            ],
+            "円形鋼管(STK/STKN)": [
+                {n:"φ-114.3x4.5", u:12.2, a:0.359}, {n:"φ-165.2x5.0", u:19.8, a:0.519}, {n:"φ-216.3x5.8", u:30.1, a:0.680},
+                {n:"φ-267.4x6.6", u:42.4, a:0.840}, {n:"φ-318.5x6.9", u:53.0, a:1.00}, {n:"φ-406.4x12.7", u:123, a:1.27},
+                {n:"φ-508.0x16.0", u:194, a:1.60}, {n:"φ-609.6x19.0", u:277, a:1.91}
+            ]
+        }
+    },
+    "重量鋼材（形鋼）": {
+        "山形鋼(Angle)": {
+            "等辺山形鋼": [
+                {n:"L-40x40x3", u:1.83, a:0.155}, {n:"L-40x40x5", u:2.95, a:0.155}, {n:"L-50x50x4", u:3.06, a:0.194}, {n:"L-50x50x6", u:4.43, a:0.194},
+                {n:"L-65x65x6", u:5.91, a:0.253}, {n:"L-65x65x8", u:7.66, a:0.253}, {n:"L-75x75x6", u:6.85, a:0.292}, {n:"L-75x75x9", u:9.96, a:0.292},
+                {n:"L-90x90x7", u:9.59, a:0.352}, {n:"L-90x90x10", u:13.3, a:0.352}, {n:"L-100x100x7", u:10.7, a:0.391}, {n:"L-100x100x10", u:14.9, a:0.391},
+                {n:"L-130x130x9", u:17.9, a:0.51}, {n:"L-130x130x12", u:23.4, a:0.51}, {n:"L-150x150x12", u:27.3, a:0.59}, {n:"L-200x200x15", u:45.3, a:0.79}
+            ],
+            "不等辺山形鋼": [
+                {n:"L-75x50x6", u:5.67, a:0.243}, {n:"L-100x75x7", u:9.32, a:0.342}, {n:"L-100x75x10", u:13.0, a:0.342},
+                {n:"L-125x75x7", u:10.7, a:0.392}, {n:"L-125x75x10", u:14.9, a:0.392}, {n:"L-150x90x9", u:16.5, a:0.47}, {n:"L-150x90x12", u:21.6, a:0.47}
+            ],
+            "不等辺不等厚": [
+                {n:"L-150x90x9/12", u:18.4, a:0.47}, {n:"L-200x90x9/14", u:25.7, a:0.57}, {n:"L-250x90x10/15", u:32.4, a:0.67}, {n:"L-300x90x11/16", u:39.6, a:0.77}
+            ]
+        },
+        "溝形鋼/T形鋼": {
+            "溝形鋼([)": [
+                {n:"[-75x40x5", u:6.92, a:0.29}, {n:"[-100x50x5", u:9.36, a:0.38}, {n:"[-125x65x6", u:13.4, a:0.49}, {n:"[-150x75x6.5", u:18.6, a:0.58},
+                {n:"[-200x80x7.5", u:24.6, a:0.69}, {n:"[-250x90x9", u:34.6, a:0.83}, {n:"[-300x90x9", u:38.1, a:0.91}, {n:"[-380x100x10.5", u:54.5, a:1.11}
+            ],
+            "T形鋼(CT)": [
+                {n:"CT-100x100x6x8", u:8.45, a:0.39}, {n:"CT-125x125x6.5x9", u:11.8, a:0.49}, {n:"CT-150x150x7x10", u:15.6, a:0.59},
+                {n:"CT-200x200x8x12", u:25.0, a:0.78}, {n:"CT-250x250x9x14", u:35.9, a:0.98}, {n:"CT-300x300x10x15", u:46.5, a:1.17}, {n:"CT-400x400x13x21", u:86, a:1.56}
+            ]
+        }
+    },
+    "軽量・二次部材": {
+        "角/丸パイプ": {
+            "角形鋼管(肉厚展開)": [
+                {n:"□-19x19x1.2t", u:0.68, a:0.076}, {n:"□-19x19x1.6t", u:0.89, a:0.076},
+                {n:"□-25x25x1.6t", u:1.19, a:0.1}, {n:"□-25x25x2.3t", u:1.64, a:0.1},
+                {n:"□-30x30x1.6t", u:1.44, a:0.12}, {n:"□-30x30x2.3t", u:2.01, a:0.12},
+                {n:"□-40x40x1.6t", u:1.94, a:0.16}, {n:"□-40x40x2.3t", u:2.73, a:0.16}, {n:"□-40x40x3.2t", u:3.63, a:0.16},
+                {n:"□-50x50x1.6t", u:2.44, a:0.2}, {n:"□-50x50x2.3t", u:3.45, a:0.2}, {n:"□-50x50x3.2t", u:4.63, a:0.2},
+                {n:"□-60x60x2.3t", u:4.18, a:0.24}, {n:"□-60x60x3.2t", u:5.5, a:0.24},
+                {n:"□-75x75x2.3t", u:5.26, a:0.3}, {n:"□-75x75x3.2t", u:7.14, a:0.3},
+                {n:"□-100x100x2.3t", u:7.07, a:0.4}, {n:"□-100x100x3.2t", u:9.66, a:0.4}
+            ],
+            "丸パイプ(肉厚展開)": [
+                {n:"φ-21.7x1.9t", u:0.928, a:0.068}, {n:"φ-21.7x2.3t", u:1.1, a:0.068},
+                {n:"φ-27.2x1.9t", u:1.18, a:0.085}, {n:"φ-27.2x2.3t", u:1.41, a:0.085},
+                {n:"φ-34.0x2.3t", u:1.8, a:0.107}, {n:"φ-34.0x3.2t", u:2.43, a:0.107},
+                {n:"φ-42.7x2.3t", u:2.29, a:0.134}, {n:"φ-42.7x3.2t", u:3.12, a:0.134},
+                {n:"φ-48.6x2.3t", u:2.62, a:0.153}, {n:"φ-48.6x3.2t", u:3.58, a:0.153},
+                {n:"φ-60.5x2.3t", u:3.3, a:0.19}, {n:"φ-60.5x3.2t", u:4.52, a:0.19},
+                {n:"φ-76.3x3.2t", u:5.77, a:0.24}, {n:"φ-89.1x3.2t", u:6.78, a:0.28},
+                {n:"φ-101.6x3.2t", u:7.77, a:0.319}, {n:"φ-101.6x4.2t", u:10.1, a:0.319}
+            ]
+        },
+        "リップ溝形鋼": {
+            "Cチャン(肉厚展開)": [
+                {n:"C-60x30x10x1.6t", u:1.63, a:0.25}, {n:"C-60x30x10x2.3t", u:2.25, a:0.25},
+                {n:"C-75x45x15x1.6t", u:2.32, a:0.36}, {n:"C-75x45x15x2.3t", u:3.25, a:0.36},
+                {n:"C-100x50x20x1.6t", u:3.03, a:0.45}, {n:"C-100x50x20x2.3t", u:4.06, a:0.45}, {n:"C-100x50x20x3.2t", u:5.5, a:0.45},
+                {n:"C-150x50x20x2.3t", u:4.96, a:0.55}, {n:"C-150x50x20x3.2t", u:6.76, a:0.57},
+                {n:"C-150x75x20x3.2t", u:8.01, a:0.67}, {n:"C-150x75x20x4.5t", u:11.0, a:0.67},
+                {n:"C-200x75x20x3.2t", u:9.27, a:0.77}, {n:"C-200x75x20x4.5t", u:12.8, a:0.77}
+            ]
+        }
+    },
+    "平鋼・丸鋼・板材": {
+        "平鋼(FB)": {
+            "厚 3mm~6mm": [
+                {n:"FB-3x16", u:0.38}, {n:"FB-3x19", u:0.45}, {n:"FB-3x25", u:0.59}, {n:"FB-3x32", u:0.75}, {n:"FB-3x38", u:0.89}, {n:"FB-3x50", u:1.18},
+                {n:"FB-4.5x25", u:0.88}, {n:"FB-4.5x38", u:1.34}, {n:"FB-4.5x50", u:1.77},
+                {n:"FB-6x19", u:0.89}, {n:"FB-6x25", u:1.18}, {n:"FB-6x32", u:1.51}, {n:"FB-6x38", u:1.79}, {n:"FB-6x50", u:2.36}, {n:"FB-6x65", u:3.06}, {n:"FB-6x75", u:3.53}, {n:"FB-6x90", u:4.24}, {n:"FB-6x100", u:4.71}, {n:"FB-6x125", u:5.89}, {n:"FB-6x150", u:7.06}
+            ],
+            "厚 9mm~25mm": [
+                {n:"FB-9x32", u:2.26}, {n:"FB-9x38", u:2.68}, {n:"FB-9x50", u:3.53}, {n:"FB-9x65", u:4.59}, {n:"FB-9x75", u:5.3}, {n:"FB-9x90", u:6.36}, {n:"FB-9x100", u:7.06}, {n:"FB-9x125", u:8.83}, {n:"FB-9x150", u:10.6}, {n:"FB-9x200", u:14.1},
+                {n:"FB-12x50", u:4.71}, {n:"FB-12x65", u:6.12}, {n:"FB-12x75", u:7.06}, {n:"FB-12x100", u:9.42}, {n:"FB-12x125", u:11.8}, {n:"FB-12x150", u:14.1}, {n:"FB-12x200", u:18.8},
+                {n:"FB-16x100", u:12.6}, {n:"FB-16x150", u:18.8}, {n:"FB-19x100", u:14.9}, {n:"FB-19x150", u:22.4}, {n:"FB-22x100", u:17.3}, {n:"FB-25x100", u:19.6}, {n:"FB-25x150", u:29.4}
+            ]
+        },
+        "丸鋼/板材": {
+            "丸鋼(RB)": [{n:"φ-9", u:0.5}, {n:"φ-13", u:1.04}, {n:"φ-16", u:1.58}, {n:"φ-19", u:2.23}, {n:"φ-22", u:2.98}, {n:"φ-25", u:3.85}],
+            "板材(PL)": [{n:"PL-3.2", u:25.1}, {n:"PL-4.5", u:35.3}, {n:"PL-6.0", u:47.1}, {n:"PL-9.0", u:70.7}, {n:"PL-12.0", u:94.2}, {n:"PL-16.0", u:126}, {n:"PL-19.0", u:149}, {n:"PL-22.0", u:173}, {n:"PL-25.0", u:196}]
+        }
+    }
+};
+
+let gCounter = 0;
+
+function addGroup(name = "") {
+    gCounter++;
+    const area = document.getElementById('groupsArea');
+    const div = document.createElement('div');
+    div.className = 'group-container';
+    div.id = `g-${gCounter}`;
+    div.innerHTML = `
+        <div class="group-header">
+            <input type="text" class="group-name-input" value="${name || '新規グループ ' + gCounter}">
+            <button class="btn btn-del" onclick="removeGroup(${gCounter})">削除</button>
+            <span style="margin-left:auto; font-weight:bold;">グループ計: <span class="g-w">0</span> kg / <span class="g-a">0</span> ㎡</span>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-usage" onclick="sort(this,0)">使用箇所</th>
+                    <th class="col-cat">大分類</th><th class="col-cat">中分類</th><th class="col-cat">小分類</th>
+                    <th class="col-size">サイズ選択</th>
+                    <th class="col-spec" onclick="sort(this,5)">kg/m</th><th class="col-spec">㎡/m</th>
+                    <th class="col-num">長さ(m)</th><th class="col-num">本数</th>
+                    <th class="col-result" onclick="sort(this,9)">重量(kg)</th><th class="col-result">面積(㎡)</th>
+                    <th class="col-op">操作</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div style="padding:8px; border-top:1px solid #ddd; text-align:right;">
+            <button class="btn" style="background:var(--success)" onclick="addRow(${gCounter})">+ 行追加</button>
+        </div>
+    `;
+    area.appendChild(div);
+    if(!name) addRow(gCounter);
+}
+
+function addRow(gId, d = null) {
+    const tbody = document.querySelector(`#g-${gId} tbody`);
+    const tr = document.createElement('tr');
+    let opt = '<option value="">選択</option>';
+    for (let k in steelDB) opt += `<option value="${k}">${k}</option>`;
+
+    tr.innerHTML = `
+        <td><input type="text" class="usage" value="${d?d.usage:''}"></td>
+        <td><select onchange="upL2(this)">${opt}</select></td>
+        <td><select onchange="upL3(this)"><option>-</option></select></td>
+        <td><select onchange="upSz(this)"><option>-</option></select></td>
+        <td><select onchange="setSt(this)"><option>-</option></select></td>
+        <td><input type="number" class="u num" step="0.01" oninput="calc(this)" value="${d?d.u:''}"></td>
+        <td><input type="text" class="a num" oninput="calc(this)" value="${d?d.a:''}"></td>
+        <td><input type="number" class="l num" step="0.001" oninput="calc(this)" value="${d?d.l:0}"></td>
+        <td><input type="number" class="q num" oninput="calc(this)" value="${d?d.q:0}"></td>
+        <td class="num res-w">0.00</td>
+        <td class="num res-a">0.00</td>
+        <td class="col-op">
+            <button class="btn btn-copy" onclick="copyRow(this)">複</button>
+            <button class="btn btn-move" onclick="move(this,-1)">▲</button>
+            <button class="btn btn-move" onclick="move(this,1)">▼</button>
+            <button class="btn btn-del" onclick="this.closest('tr').remove(); total();">×</button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    if(d) calc(tr.querySelector('input'));
+}
+
+function upL2(e){ const l2=e.closest('tr').querySelectorAll('select')[1]; l2.innerHTML='<option>-</option>'; if(e.value) for(let k in steelDB[e.value]) l2.innerHTML+=`<option value="${k}">${k}</option>`; }
+function upL3(e){ const tr=e.closest('tr'), l1=tr.querySelectorAll('select')[0].value, l2=tr.querySelectorAll('select')[1].value, l3=tr.querySelectorAll('select')[2]; l3.innerHTML='<option>-</option>'; if(l1 && l2) for(let k in steelDB[l1][l2]) l3.innerHTML+=`<option value="${k}">${k}</option>`; }
+function upSz(e){ const tr=e.closest('tr'), l1=tr.querySelectorAll('select')[0].value, l2=tr.querySelectorAll('select')[1].value, l3=tr.querySelectorAll('select')[2].value, sz=tr.querySelectorAll('select')[3]; sz.innerHTML='<option>-</option>'; if(l1 && l2 && l3) steelDB[l1][l2][l3].forEach(i=>{ let o=document.createElement('option'); o.value=JSON.stringify(i); o.textContent=i.n; sz.appendChild(o); }); }
+function setSt(e){ if(!e.value || e.value==="-") return; const d=JSON.parse(e.value), tr=e.closest('tr'); tr.querySelector('.u').value=d.u; tr.querySelector('.a').value=d.a||"-"; calc(e); }
+
+function calc(e){
+    const tr=e.closest('tr'), u=parseFloat(tr.querySelector('.u').value)||0, at=tr.querySelector('.a').value, a=at==="-"?0:(parseFloat(at)||0), l=parseFloat(tr.querySelector('.l').value)||0, q=parseFloat(tr.querySelector('.q').value)||0;
+    tr.querySelector('.res-w').textContent=(u*l*q).toFixed(2); tr.querySelector('.res-a').textContent=at==="-"?"-":(a*l*q).toFixed(2);
+    total();
+}
+
+function total(){
+    let gw=0, ga=0;
+    document.querySelectorAll('.group-container').forEach(g=>{
+        let w=0, a=0;
+        g.querySelectorAll('.res-w').forEach(s=> w+=parseFloat(s.textContent)||0);
+        g.querySelectorAll('.res-a').forEach(s=>{ const v=parseFloat(s.textContent); if(!isNaN(v)) a+=v; });
+        g.querySelector('.g-w').textContent=w.toLocaleString(); g.querySelector('.g-a').textContent=a.toFixed(2);
+        gw+=w; ga+=a;
+    });
+    document.getElementById('grandWeight').textContent=gw.toLocaleString();
+    document.getElementById('grandTon').textContent=(gw/1000).toFixed(3);
+    document.getElementById('grandArea').textContent=ga.toFixed(2);
+}
+
+function copyRow(btn){ const tr=btn.closest('tr'), gId=tr.closest('.group-container').id.split('-')[1]; addRow(gId,{usage:tr.querySelector('.usage').value, u:tr.querySelector('.u').value, a:tr.querySelector('.a').value, l:tr.querySelector('.l').value, q:tr.querySelector('.q').value}); }
+function move(btn,dir){ const tr=btn.closest('tr'); if(dir===-1 && tr.previousElementSibling) tr.parentNode.insertBefore(tr, tr.previousElementSibling); if(dir===1 && tr.nextElementSibling) tr.parentNode.insertBefore(tr.nextElementSibling, tr); }
+function sort(th,idx){ const tb=th.closest('table').querySelector('tbody'), rs=Array.from(tb.rows), asc=th.dataset.ord!=='asc'; rs.sort((a,b)=>{ let vA=a.cells[idx].querySelector('input')?.value||a.cells[idx].textContent, vB=b.cells[idx].querySelector('input')?.value||b.cells[idx].textContent; return asc?(isNaN(vA-vB)?vA.localeCompare(vB):vA-vB):(isNaN(vA-vB)?vB.localeCompare(vA):vB-vA); }); th.dataset.ord=asc?'asc':'desc'; rs.forEach(r=>tb.appendChild(r)); }
+
+function exportProject(){
+    const d=[]; document.querySelectorAll('.group-container').forEach(g=>{ const rows=[]; g.querySelectorAll('tbody tr').forEach(tr=>{ rows.push({usage:tr.querySelector('.usage').value, u:tr.querySelector('.u').value, a:tr.querySelector('.a').value, l:tr.querySelector('.l').value, q:tr.querySelector('.q').value}); }); d.push({name:g.querySelector('.group-name-input').value, rows}); });
+    const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}), l=document.createElement("a"); l.href=URL.createObjectURL(b); l.download=`steel_project.json`; l.click();
+}
+function importProject(i){
+    const f=i.files[0]; if(!f) return; const r=new FileReader(); r.onload=(e)=>{ const data=JSON.parse(e.target.result); document.getElementById('groupsArea').innerHTML=''; gCounter=0; data.forEach(g=>{ addGroup(g.name); g.rows.forEach(row=>addRow(gCounter,row)); }); total(); }; r.readAsText(f);
+}
+function exportCSV(){
+    let c="\uFEFFグループ,使用箇所,単位重量,単位面積,長さ,本数,重量,面積\n"; document.querySelectorAll('.group-container').forEach(g=>{ const n=g.querySelector('.group-name-input').value; g.querySelectorAll('tbody tr').forEach(tr=>{ c+=`"${n}","${tr.querySelector('.usage').value}",${tr.querySelector('.u').value},${tr.querySelector('.a').value},${tr.querySelector('.l').value},${tr.querySelector('.q').value},${tr.querySelector('.res-w').textContent},${tr.querySelector('.res-a').textContent}\n`; }); });
+    const b=new Blob([c],{type:'text/csv'}), l=document.createElement("a"); l.href=URL.createObjectURL(b); l.download="steel_list.csv"; l.click();
+}
+function removeGroup(id){ if(confirm('グループを削除しますか？')) document.getElementById(`g-${id}`).remove(); total(); }
+
+addGroup();
+</script>
+</body>
+</html>
